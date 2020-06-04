@@ -8,7 +8,7 @@ from jose import jwt
 
 class JSONWebTokenLoginHandler(BaseHandler):
 
-    def get(self):
+    async def get(self):
         header_name = self.authenticator.header_name
         param_name = self.authenticator.param_name
         header_is_authorization = self.authenticator.header_is_authorization
@@ -47,7 +47,13 @@ class JSONWebTokenLoginHandler(BaseHandler):
            raise web.HTTPError(401)
 
         username = self.retrieve_username(claims, username_claim_field)
-        user = self.user_from_username(username)
+#        user = self.user_from_username(username)
+        user = await self.auth_to_user({
+                'name': username,
+                'auth_state': {
+                    'upstream_token': token
+                }
+            })
         self.set_login_cookie(user)
 
         _url = url_path_join(self.hub.server.base_url, 'home')
@@ -146,6 +152,14 @@ class JSONWebTokenAuthenticator(Authenticator):
     def authenticate(self, *args):
         raise NotImplementedError()
 
+    @gen.coroutine
+    def pre_spawn_start(self, user, spawner):
+        """Pass upstream token to spawner via environment variable"""
+        self.log.info(f'pre_spawn_start user {user}')
+        auth_state = yield user.get_auth_state()
+        self.log.info(f'pre_spawn_start user auth state {auth_state}')
+        if auth_state:
+            spawner.environment['DLA_UPSTREAM_TOKEN'] = auth_state['upstream_token']
 
 class JSONWebTokenLocalAuthenticator(JSONWebTokenAuthenticator, LocalAuthenticator):
     """
